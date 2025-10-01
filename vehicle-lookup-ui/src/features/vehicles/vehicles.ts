@@ -5,8 +5,9 @@ import {
   OnDestroy,
   OnInit,
   ViewChild,
-  signal,
   inject,
+  signal,
+  computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormControl } from '@angular/forms';
@@ -15,11 +16,15 @@ import { MatSelect, MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
-import { catchError, debounceTime, distinctUntilChanged, filter, map, of, Subject, switchMap, takeUntil, tap } from 'rxjs';
-import { VehicleServices } from '../../core/services/vehicle-services';
-import { VehicleType } from '../../types/vehicle';
+import { toSignal } from '@angular/core/rxjs-interop';
 
-interface Make { id: number; name: string; }
+import { startWith, Subject } from 'rxjs';
+
+import { VehicleServices } from '../../core/services/vehicle-services';
+import type { Car, VehicleType } from '../../types/vehicle';
+
+// minimal make shape
+type Make = { id: number; name: string };
 
 @Component({
   selector: 'app-vehicles',
@@ -31,182 +36,199 @@ interface Make { id: number; name: string; }
     MatSelectModule,
     MatIconModule,
     MatProgressSpinnerModule,
-    NgxMatSelectSearchModule
+    NgxMatSelectSearchModule,
   ],
   templateUrl: './vehicles.html',
-  styleUrls: ['./vehicles.css']
+  styleUrls: ['./vehicles.css'],
 })
 export class Vehicles implements OnInit, AfterViewInit, OnDestroy {
-  protected title = signal('Makes');
-
-  // Material select ref (for scroll handling)
-  @ViewChild(MatSelect, { static: false }) matSelect!: MatSelect;
-
-  // selection + search
+  // controls
   makeIdCtrl = new FormControl<number | null>(null);
-  makeSearchCtrl = new FormControl<string>('');
-  yearCtrl = new FormControl<number | null>(null);
+  yearCtrl   = new FormControl<number | null>(null);
 
-  // list bound to the dropdown
-  makes: Make[] = [];
-  makesSignal= signal<Make[]>([]);
-   
-  // paging state
+  // state (signals)
+  readonly title = signal('Find Vehicles');
+
+  // makes + search/paging
+  readonly makes        = signal<Make[]>([]);
+  readonly makesLoading = signal(false);
+  readonly makesError   = signal<string | null>(null);
+  readonly makesSearch  = signal<string>(''); // server-side search term
+
+  // results (vehicle types + cars)
+  readonly vehicleTypes   = signal<VehicleType[]>([]);
+  readonly vehicleLoading = signal(false);
+  readonly vehicleError   = signal<string | null>(null);
+
+  readonly cars        = signal<Car[]>([]);
+  readonly carsLoading = signal(false);
+  readonly carsError   = signal<string | null>(null);
+
+  // years
+  readonly minYear = 1950;
+  readonly maxYear = new Date().getFullYear();
+  readonly years   = signal<number[]>(
+    Array.from({ length: (this.maxYear - this.minYear + 1) }, (_, i) => this.maxYear - i)
+  );
+
+ // turn form control valueChanges into signals
+readonly selectedMakeId = toSignal(
+  this.makeIdCtrl.valueChanges.pipe(startWith(this.makeIdCtrl.value)),
+  { initialValue: this.makeIdCtrl.value }
+);
+
+readonly selectedYear = toSignal(
+  this.yearCtrl.valueChanges.pipe(startWith(this.yearCtrl.value)),
+  { initialValue: this.yearCtrl.value }
+);
+
+// use a computed that depends on signals (so it actually updates)
+readonly canSearch = computed(
+  () => this.selectedMakeId() != null && this.selectedYear() != null
+);
+  // paging
   private page = 1;
-  private readonly pageSize = 10;
-  private searchTerm = '';
-  loading = false;        // when fetching the first page or search reset
-  loadingMore = false;    // when fetching next pages
-  endOfList = false;      // true when server says no more data
+  private readonly pageSize = 20;
+  private endOfMakes = false;
 
-  
-  // vehicle types for the selected make
-  vehicleTypes = signal<VehicleType[]>([]);
-  vehicleTypesLoading = signal<boolean>(false);
-  vehicleTypesError = signal<string | null>(null);
+  private readonly api = inject(VehicleServices);
+  private readonly destroy$ = new Subject<void>();
 
-  years = [] as number[];
-  private destroy$ = new Subject<void>();
-  private vehicleService = inject(VehicleServices);
+  // reference to the make select (for scroll hook)
+  @ViewChild('makeSelect', { static: false }) makeSelect!: MatSelect;
 
+  // lifecycle
   ngOnInit(): void {
-    // load first page on init
-    this.resetAndLoad();
-
-    // server-side search
-    this.makeSearchCtrl.valueChanges
-      .pipe(debounceTime(1000), distinctUntilChanged(), takeUntil(this.destroy$))
-      .subscribe(term => {
-        this.searchTerm = (term ?? '').trim();
-        this.resetAndLoad(); // resets to page 1 and fetches with new search term
-      });
-
-    // optional: update title when a make is chosen
-    this.makeIdCtrl.valueChanges.pipe(takeUntil(this.destroy$)).subscribe(id => {
-      const m = this.makes.find(x => x.id === id);
-      // this.title.set(m ? m.name : 'Makes');
-    });
-
-     // --- WHEN A MAKE IS SELECTED, LOAD ITS VEHICLE TYPES ---
-    this.makeIdCtrl.valueChanges.pipe(
-      // only proceed with real ids
-      filter((id): id is number => id != null),
-      distinctUntilChanged(),
-      tap(() => {
-        this.vehicleTypesLoading.set(true);
-        this.vehicleTypesError.set(null);
-        this.vehicleTypes.set([]);           // clear previous types
-      }),
-      switchMap(id =>
-        this.vehicleService.getVehicleTypesForMakeId(id).pipe(
-          // normalize to {vehicleTypeId, vehicleTypeName}[]
-          map((list: any[]) => (list ?? []).map(x => ({
-            vehicleTypeId: x.vehicleTypeId ?? x.id ?? x.value ?? x.key,
-            vehicleTypeName: x.vehicleTypeName ?? x.name ?? x.label ?? x.text
-          }) as VehicleType)),
-          catchError(err => {
-            this.vehicleTypesError.set('Failed to load vehicle types.');
-            return of([] as VehicleType[]);
-          })
-        )
-      ),
-      takeUntil(this.destroy$)
-    ).subscribe(types => {
-      this.vehicleTypes.set(types);
-      this.vehicleTypesLoading.set(false);
-    });
-    
-    for (let year = 1950; year <= new Date().getFullYear(); year++) {
-      this.years.push(year);
-    }
+    this.loadMakes(true); // initial load for makes
   }
-
 
   ngAfterViewInit(): void {
-    // Hook into panel open to attach scroll listener
-    this.matSelect.openedChange
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(open => {
-        if (!open) return;
+    // INF. SCROLL: hook panel scroll, load more when near bottom
+    this.makeSelect.openedChange.subscribe(open => {
+      if (!open) return;
 
-        // Panel element is the scroll container
-        const panel = document.querySelector('.cdk-overlay-pane .mat-mdc-select-panel') as HTMLElement | null;
-        if (!panel) return;
+      const panel = document.querySelector('.cdk-overlay-pane .mat-mdc-select-panel') as HTMLElement | null;
+      if (!panel) return;
 
-        const onScroll = () => {
-          if (this.loading || this.loadingMore || this.endOfList) return;
-          const nearBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 64;
-          if (nearBottom) this.loadNextPage();
-        };
+      const onScroll = () => {
+        if (this.makesLoading() || this.endOfMakes) return;
+        const nearBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 64;
+        if (nearBottom) this.onLoadMoreMakes();
+      };
 
-        panel.addEventListener('scroll', onScroll);
-        // Clean up when panel closes
-        const sub = this.matSelect.openedChange.subscribe(o => {
-          if (!o) {
-            panel.removeEventListener('scroll', onScroll);
-            sub.unsubscribe();
-          }
-        });
-      });
-  }
+      panel.addEventListener('scroll', onScroll);
 
-  private resetAndLoad() {
-    this.page = 1;
-    this.endOfList = false;
-    this.makes = [];
-    this.refreshFromApi(this.makes);
-    this.fetchPage(true);
-  }
-
-  private loadNextPage() {
-    if (this.endOfList) return;
-    this.page += 1;
-    this.fetchPage(false);
-  }
-
-  private fetchPage(isFirstPage: boolean) {
-    if (isFirstPage) {
-      this.loading = true;
-    } else {
-      this.loadingMore = true;
-    }
-
-    this.vehicleService.getAllMakes(this.page, this.pageSize, this.searchTerm)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: res => {
-          const items = (res?.items ?? []).map((x: any) => ({
-            id: x.id ?? x.makeId ?? x.value ?? x.key,
-            name: x.name ?? x.makeName ?? x.label ?? x.text
-          })) as Make[];
-
-          // Append or set
-          this.makes = isFirstPage ? items : [...this.makes, ...items];
-          this.refreshFromApi(this.makes);
-          // If returned less than page size, no more pages
-          if (!items.length || items.length < this.pageSize) {
-            this.endOfList = true;
-          }
-        },
-        error: () => {
-          // On error, stop further loading attempts for this session
-          this.endOfList = true;
-        },
-        complete: () => {
-          this.loading = false;
-          this.loadingMore = false;
+      // clean up when it closes
+      const sub = this.makeSelect.openedChange.subscribe(o => {
+        if (!o) {
+          panel.removeEventListener('scroll', onScroll);
+          sub.unsubscribe();
         }
       });
+    });
   }
-
-  trackById = (_: number, item: Make) => item.id;
-  clearSelection() { this.makeIdCtrl.setValue(null); }
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
   }
-  refreshFromApi(newData: Make[]) {
-    this.makesSignal.set(newData);
+
+  // UI handlers
+  onSearchClick(): void {
+    if (!this.canSearch()) return;
+
+    const makeId = this.makeIdCtrl.value as number;
+    const year   = this.yearCtrl.value as number;
+
+    // reset
+    this.vehicleTypes.set([]);
+    this.cars.set([]);
+    this.vehicleError.set(null);
+    this.carsError.set(null);
+
+    // Vehicle Types (by make)
+    this.vehicleLoading.set(true);
+    this.api.getVehicleTypesForMakeId(makeId).subscribe({
+      next: (list: any[]) => {
+        const normalized: VehicleType[] = (list ?? []).map(x => ({
+          vehicleTypeId:   x.vehicleTypeId ?? x.id ?? x.value ?? x.key,
+          vehicleTypeName: x.vehicleTypeName ?? x.name ?? x.label ?? x.text,
+        }));
+        this.vehicleTypes.set(normalized);
+      },
+      error: () => this.vehicleError.set('Failed to load vehicle types.'),
+      complete: () => this.vehicleLoading.set(false),
+    });
+
+   // Cars / Models (by make + year)
+this.carsLoading.set(true);
+this.api.getModelsForMakeIdYear(makeId, year).subscribe({
+  next: (rows: any[]) => {
+    // Normalize to your Car type: { make_ID, make_Name, model_ID, model_Name }
+    const normalized: Car[] = (rows ?? []).map((x: any) => ({
+      make_ID:    x.make_ID    ?? x.Make_ID    ?? x.makeId    ?? x.MakeId    ?? x.make_id    ?? null,
+      make_Name:  x.make_Name  ?? x.Make_Name  ?? x.makeName  ?? x.MakeName  ?? x.make_name  ?? '',
+      model_ID:   x.model_ID   ?? x.Model_ID   ?? x.modelId   ?? x.ModelId   ?? x.model_id   ?? null,
+      model_Name: x.model_Name ?? x.Model_Name ?? x.modelName ?? x.ModelName ?? x.model_name ?? '',
+    }));
+    this.cars.set(normalized);
+  },
+  error: () => this.carsError.set('Failed to load models.'),
+  complete: () => this.carsLoading.set(false),
+});
+
   }
+
+  onClearSelection(): void {
+    this.makeIdCtrl.setValue(null);
+    this.yearCtrl.setValue(null);
+    this.vehicleTypes.set([]);
+    this.cars.set([]);
+    this.vehicleError.set(null);
+    this.carsError.set(null);
+  }
+
+  onSearchMakes(): void {
+    this.loadMakes(true);
+  }
+
+  onLoadMoreMakes(): void {
+    if (this.endOfMakes || this.makesLoading()) return;
+    this.page += 1;
+    this.loadMakes(false);
+  }
+
+  // data loaders
+  private loadMakes(reset: boolean): void {
+    if (reset) {
+      this.page = 1;
+      this.endOfMakes = false;
+      this.makes.set([]);
+      this.makesError.set(null);
+    }
+    if (this.endOfMakes) return;
+
+    this.makesLoading.set(true);
+    this.api.getAllMakes(this.page, this.pageSize, this.makesSearch()).subscribe({
+      next: (res: any) => {
+        const items: Make[] = (res?.items ?? []).map((x: any) => ({
+          id:   x.id ?? x.makeId ?? x.value ?? x.key,
+          name: x.name ?? x.makeName ?? x.label ?? x.text,
+        }));
+        this.makes.set(reset ? items : [...this.makes(), ...items]);
+        if (!items.length || items.length < this.pageSize) this.endOfMakes = true;
+      },
+      error: () => {
+        this.makesError.set('Failed to load makes.');
+        this.endOfMakes = true;
+      },
+      complete: () => this.makesLoading.set(false),
+    });
+  }
+
+  // trackBys
+  trackByMake = (_: number, m: Make) => m.id;
+  trackByYear = (_: number, y: number) => y;
+  trackByVehicleType = (_: number, v: VehicleType) => v.vehicleTypeId;
+  trackByCar = (_: number, c: Car) => c.model_ID;
 }
