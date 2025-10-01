@@ -7,7 +7,7 @@ public record Envelope<T>(
     [property: JsonPropertyName("Count")] int Count,
     [property: JsonPropertyName("Message")] string Message,
     [property: JsonPropertyName("SearchCriteria")] string? SearchCriteria,
-    [property: JsonPropertyName("Results")] IReadOnlyList<T> Results
+    [property: JsonPropertyName("Results")] List<T> Results
 );
 
 // GET getallmakes

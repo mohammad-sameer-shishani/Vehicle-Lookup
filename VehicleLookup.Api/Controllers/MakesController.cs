@@ -1,4 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using VehicleLookup.Api.Helpers;
+using VehicleLookup.Api.Infrastructure.Http;
+using VehicleLookup.Api.Models;
 using VehicleLookup.Api.Services;
 
 namespace VehicleLookup.Api.Controllers;
@@ -10,15 +13,22 @@ public sealed class MakesController : ControllerBase
     private readonly IVehicleService _vehicleService;
     public MakesController(IVehicleService vehicleService) => _vehicleService = vehicleService;
 
-    /// <summary>Returns all car makes.</summary>
+    /// Returns all car makes.
     [HttpGet]
-    public async Task<IActionResult> GetAllMakes()
+    public async Task<ActionResult<IReadOnlyList<MakeDto>>> GetAllMakes([FromQuery]PagingParams pagingParams)
     {
-        var data = await _vehicleService.GetAllMakesAsync();
+        var data = await _vehicleService.GetAllMakesAsync(pagingParams);
+        return Ok(data);
+    }
+    /// Returns all car makes for search.
+    [HttpGet("/getAllMakesForSearch")]
+    public async Task<IActionResult> GetAllMakesForSearch()
+    {
+        var data = await _vehicleService.GetAllMakesForSearchAsync();
         return Ok(data);
     }
 
-    /// <summary>Returns vehicle types for a specific make.</summary>
+    /// Returns vehicle types for a specific make.
     [HttpGet("{makeId:int}/types")]
     public async Task<IActionResult> GetTypes([FromRoute] int makeId)
     {
@@ -26,7 +36,7 @@ public sealed class MakesController : ControllerBase
         return Ok(data);
     }
 
-    /// <summary>Returns models for a specific make and year.</summary>
+    /// Returns models for a specific make and year.
     [HttpGet("{makeId:int}/models")]
 
     public async Task<IActionResult> GetModels([FromRoute] int makeId, [FromQuery] int year)

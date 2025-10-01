@@ -5,7 +5,32 @@
   "projects": {
     "vehicle-lookup-ui": {
       "projectType": "application",
-      "schematics": {},
+      "schematics": {
+        "@schematics/angular:component": {
+          "skipTests": true,
+          "path": "src"
+        },
+        "@schematics/angular:service": {
+          "skipTests": true,
+          "path": "src/core/services"
+        },
+        "@schematics/angular:guard": {
+          "skipTests": true,
+          "path": "src/core/guards"
+        },
+        "@schematics/angular:pipe": {
+          "skipTests": true,
+          "path": "src/core/pipes"
+        },
+        "@schematics/angular:interceptor": {
+          "skipTests": true,
+          "path": "src/shared/interceptors"
+        },
+        "@schematics/angular:resolver": {
+          "skipTests": true,
+          "path": "src/core/resolvers"
+        }
+      },
       "root": "",
       "sourceRoot": "src",
       "prefix": "app",

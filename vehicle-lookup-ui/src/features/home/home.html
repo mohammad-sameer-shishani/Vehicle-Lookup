@@ -1,0 +1,12 @@
+<div class="flex h-screen px-3 py-1 items-center justify-center gap-5 flex-col">    
+    <h1 class="text-5xl font-bold ">Welcome to Vehicle Lookup</h1>
+    <button class="btn rounded-2xl from-primary to-secondary bg-gradient-to-bl text-white text-lg  hover:scale-120">Explore Vehicles</button>
+    <h1>{{types()}} sdfdfdfdfdfdfedf</h1>
+  @if (types().length) {
+    @for (t of types(); track t) {
+      <p>#{{ t.vehicleTypeId }} — {{ t.vehicleTypeName }}</p>
+    }
+  } @else {
+    <p>No types found.</p>
+  }
+</div>

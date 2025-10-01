@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Json;
+﻿using VehicleLookup.Api.Helpers;
 using VehicleLookup.Api.Infrastructure.Http;
 using VehicleLookup.Api.Models;
 
@@ -14,13 +14,30 @@ public sealed class VehicleService : IVehicleService
         _http.BaseAddress = new Uri("https://vpic.nhtsa.dot.gov/api/vehicles/");
     }
 
-    public async Task<IReadOnlyList<MakeDto>> GetAllMakesAsync()
+    public async Task<PaginatedResult<MakeDto>> GetAllMakesAsync(PagingParams pagingParams)
     {
         var env = await GetEnvelopeAsync<Make>("getallmakes?format=json");
-        return env.Results
-                  .OrderBy(m => m.MakeName)
-                  .Select(m => new MakeDto(m.MakeId, m.MakeName))
-                  .ToList();
+
+        var ordered = env.Results
+            .OrderBy(x => x.MakeName)
+            .Select(m => new MakeDto(m.MakeId, m.MakeName))
+            .AsQueryable();
+
+        // Run synchronous pagination in a background thread
+        return await Task.Run(() =>
+            PaginationHelper.CreateAsync(ordered, pagingParams.PageNumber, pagingParams.PageSize, pagingParams.Search)
+        );
+    }
+    public async Task<IEnumerable<MakeDto>> GetAllMakesForSearchAsync()
+    {
+        var env = await GetEnvelopeAsync<Make>("getallmakes?format=json");
+
+        var ordered = env.Results
+            .OrderBy(x => x.MakeName)
+            .Select(m => new MakeDto(m.MakeId, m.MakeName))
+            .AsEnumerable();
+
+        return ordered;
     }
 
     public async Task<IReadOnlyList<VehicleTypeDto>> GetVehicleTypesForMakeIdAsync(int makeId)
