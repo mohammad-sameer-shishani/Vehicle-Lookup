@@ -2,6 +2,14 @@ using VehicleLookup.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Program.cs
+ 
+builder.Services.AddHealthChecks();
+ 
+
+
+ 
+
 // Controllers
 builder.Services.AddControllers();
 
@@ -37,7 +45,7 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
-
+app.MapHealthChecks("/health");
 // ---- Swagger toggle via config ----
 var swaggerEnabled = app.Configuration.GetValue<bool>("Swagger:Enabled"); // e.g., true in appsettings.json
 

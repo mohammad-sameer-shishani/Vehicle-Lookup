@@ -3,7 +3,6 @@ import { environment } from '../../environments/environment.development';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { PaginatedResult } from '../../types/pagination';
 import { Car, Make, VehicleType } from '../../types/vehicle';
-import { map } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
@@ -36,8 +35,7 @@ export class VehicleServices {
 
   getVehicleTypesForMakeId(makeId: number) {  
     return this.http.get<VehicleType[]>(
-      // `http://localhost:8081/api/Makes/${encodeURIComponent(String(makeId))}/types`
-      `http://localhost:8081/api/Makes/${makeId}/types`
+      `${this.url}/${makeId}/types`
     );
   }
 }
