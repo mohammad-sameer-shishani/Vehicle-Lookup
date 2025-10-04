@@ -14,7 +14,7 @@
    ```bash
    dotnet watch
    ```
-   (make sure dotnet installed)
+   (make sure dotnet is installed)
 4. Navigate to the project directory:
    ```bash
    cd ..
@@ -24,7 +24,7 @@
    ```bash
    npm install
    ```
-   (make sure angular cli in installed)
+   (make sure angular cli is installed)
 
 ## Usage
 
