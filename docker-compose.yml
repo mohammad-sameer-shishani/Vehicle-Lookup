@@ -1,0 +1,28 @@
+# docker-compose.yml
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: VehicleLookup.Api/Dockerfile
+    image: vehicle-lookup-api:latest
+    container_name: vehicle-api
+    environment:
+      ASPNETCORE_URLS: "http://+:8081"
+      # Add your real settings/secrets via env vars or mounted files:
+      # ConnectionStrings__DefaultConnection: "Server=...;Database=...;User Id=...;Password=..."
+      # ASPNETCORE_ENVIRONMENT: "Production"
+    ports:
+      - "8081:8081"
+
+  web:
+    build:
+      context: .
+      dockerfile: vehicle-lookup-ui/Dockerfile
+    image: vehicle-lookup-web:latest
+    container_name: vehicle-web
+    depends_on:
+      - api
+    ports:
+      - "80:80"

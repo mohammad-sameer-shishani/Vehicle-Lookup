@@ -1,0 +1,20 @@
+# Windows IIS image
+FROM mcr.microsoft.com/windows/servercore/iis:windowsservercore-ltsc2022
+
+SHELL ["powershell", "-Command"]
+# Enable static content (usually on, but ensure)
+RUN Import-Module IISAdministration; \
+    New-Item -Path 'C:\site' -ItemType Directory -Force | Out-Null
+
+# Copy Angular build into site
+# NOTE: update the 'your-app-name' to your actual Angular app folder inside 'dist'
+COPY dist/vehicle-lookup-ui/browser/ /site/
+
+# Replace default site physical path
+RUN Import-Module WebAdministration; \
+    Set-ItemProperty 'IIS:\Sites\Default Web Site' -Name physicalPath -Value 'C:\site'
+
+# Add a minimal SPA rewrite so deep links work (web.config)
+COPY web.config /site/
+
+EXPOSE 80
